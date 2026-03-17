@@ -1,6 +1,9 @@
 import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../data/models/clothing_item.dart';
@@ -8,6 +11,7 @@ import '../../data/models/category.dart';
 import '../../data/repositories/clothing_repository.dart';
 import '../../data/repositories/category_repository.dart';
 import '../../services/image_storage_service.dart';
+import '../../services/bg_removal_service.dart';
 
 class AddItemScreen extends StatefulWidget {
   const AddItemScreen({super.key});
@@ -17,7 +21,6 @@ class AddItemScreen extends StatefulWidget {
 }
 
 class _AddItemScreenState extends State<AddItemScreen> {
-
   File? _selectedImage;
 
   String _name = '';
@@ -31,6 +34,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
   final _repository = ClothingRepository();
   final _categoryRepo = CategoryRepository();
   final _storageService = ImageStorageService();
+
+  bool _isProcessing = false;
 
   @override
   void initState() {
@@ -55,18 +60,47 @@ class _AddItemScreenState extends State<AddItemScreen> {
   }
 
   // ===============================
-  // PICK IMAGE
+  // PICK IMAGE + REMOVE BG
   // ===============================
 
   Future<void> _pickImage() async {
     final picked =
         await _picker.pickImage(source: ImageSource.gallery);
 
-    if (picked != null) {
+    if (picked == null) return;
+
+    setState(() => _isProcessing = true);
+
+    final originalFile = File(picked.path);
+
+    try {
+      // 🔥 Remove background
+      final Uint8List? processedBytes =
+          await BgRemovalService.removeBackground(originalFile);
+
+      if (processedBytes == null) {
+        throw Exception("Background removal failed");
+      }
+
+      // 🔥 Convert to file
+      final dir = await getApplicationDocumentsDirectory();
+      final processedFile = File(
+        '${dir.path}/processed_${DateTime.now().millisecondsSinceEpoch}.png',
+      );
+
+      await processedFile.writeAsBytes(processedBytes);
+
+      // 🔥 Update UI
       setState(() {
-        _selectedImage = File(picked.path);
+        _selectedImage = processedFile;
       });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
     }
+
+    setState(() => _isProcessing = false);
   }
 
   // ===============================
@@ -74,12 +108,10 @@ class _AddItemScreenState extends State<AddItemScreen> {
   // ===============================
 
   Future<void> _saveItem() async {
-
     if (_selectedImage == null ||
         _color.isEmpty ||
         _name.isEmpty ||
         _selectedCategoryId == null) {
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please fill all fields")),
       );
@@ -122,38 +154,55 @@ class _AddItemScreenState extends State<AddItemScreen> {
         centerTitle: true,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(
-            horizontal: 16, vertical: 20),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-
             // ===============================
             // IMAGE PICKER
             // ===============================
 
-            GestureDetector(
-              onTap: _pickImage,
-              child: Container(
-                height: 180,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(16),
+            Stack(
+              children: [
+                GestureDetector(
+                  onTap: _pickImage,
+                  child: Container(
+                    height: 180,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: _selectedImage == null
+                        ? const Center(
+                            child: Text("Tap to select image"),
+                          )
+                        : ClipRRect(
+                            borderRadius:
+                                BorderRadius.circular(16),
+                            child: Image.file(
+                              _selectedImage!,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                  ),
                 ),
-                child: _selectedImage == null
-                    ? const Center(
-                        child: Text("Tap to select image"),
-                      )
-                    : ClipRRect(
+
+                if (_isProcessing)
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.4),
                         borderRadius:
                             BorderRadius.circular(16),
-                        child: Image.file(
-                          _selectedImage!,
-                          fit: BoxFit.cover,
-                        ),
                       ),
-              ),
+                      child: const Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                    ),
+                  ),
+              ],
             ),
 
             const SizedBox(height: 24),
@@ -175,7 +224,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
             const SizedBox(height: 20),
 
             // ===============================
-            // CATEGORY DROPDOWN
+            // CATEGORY
             // ===============================
 
             const Text(
