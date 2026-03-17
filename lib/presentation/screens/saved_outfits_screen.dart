@@ -2,7 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../data/models/outfit.dart';
+import '../../data/models/outfit_item.dart';
 import '../../data/models/clothing_item.dart';
+
 import '../../data/repositories/outfit_repository.dart';
 import '../../data/repositories/clothing_repository.dart';
 
@@ -10,14 +12,17 @@ class SavedOutfitsScreen extends StatefulWidget {
   const SavedOutfitsScreen({super.key});
 
   @override
-  State<SavedOutfitsScreen> createState() => _SavedOutfitsScreenState();
+  State<SavedOutfitsScreen> createState() =>
+      _SavedOutfitsScreenState();
 }
 
 class _SavedOutfitsScreenState extends State<SavedOutfitsScreen> {
+
   final OutfitRepository _outfitRepo = OutfitRepository();
   final ClothingRepository _clothingRepo = ClothingRepository();
 
-  List<Map<String, ClothingItem?>> _outfits = [];
+  List<List<ClothingItem>> _outfits = [];
+  List<Outfit> _outfitContainers = [];
 
   @override
   void initState() {
@@ -25,109 +30,127 @@ class _SavedOutfitsScreenState extends State<SavedOutfitsScreen> {
     _loadOutfits();
   }
 
+  // ================= LOAD OUTFITS =================
+
   Future<void> _loadOutfits() async {
+
     final savedOutfits = await _outfitRepo.getAllOutfits();
 
-    List<Map<String, ClothingItem?>> loaded = [];
+    List<List<ClothingItem>> loaded = [];
 
     for (Outfit outfit in savedOutfits) {
-      final shirt =
-          await _clothingRepo.getClothingById(outfit.shirtId);
-      final pant =
-          await _clothingRepo.getClothingById(outfit.pantId);
-      final shoe =
-          await _clothingRepo.getClothingById(outfit.shoesId);
 
-      final jacket = outfit.jacketId != null
-          ? await _clothingRepo.getClothingById(outfit.jacketId!)
-          : null;
+      final outfitItems =
+          await _outfitRepo.getOutfitItems(outfit.id);
 
-      final cap = outfit.capId != null
-          ? await _clothingRepo.getClothingById(outfit.capId!)
-          : null;
+      List<ClothingItem> clothing = [];
 
-      if (shirt != null && pant != null && shoe != null) {
-        loaded.add({
-          'shirt': shirt,
-          'pant': pant,
-          'shoe': shoe,
-          'jacket': jacket,
-          'cap': cap,
-        });
+      for (OutfitItem item in outfitItems) {
+
+        final clothingItem =
+            await _clothingRepo.getClothingById(
+                item.clothingId);
+
+        if (clothingItem != null) {
+          clothing.add(clothingItem);
+        }
+      }
+
+      if (clothing.isNotEmpty) {
+        loaded.add(clothing);
       }
     }
 
     setState(() {
       _outfits = loaded;
+      _outfitContainers = savedOutfits;
     });
   }
 
+  // ================= DELETE =================
+
   Future<void> _deleteOutfit(int index) async {
-    final savedOutfits = await _outfitRepo.getAllOutfits();
-    await _outfitRepo.deleteOutfit(savedOutfits[index].id);
+
+    await _outfitRepo.deleteOutfit(
+        _outfitContainers[index].id);
+
     _loadOutfits();
   }
 
+  // ================= UI =================
+
   @override
   Widget build(BuildContext context) {
+
     return Scaffold(
       backgroundColor: const Color(0xFFF2F2F2),
+
       appBar: AppBar(
         title: const Text("Saved Outfits"),
         backgroundColor: Colors.white,
         elevation: 0,
       ),
+
       body: _outfits.isEmpty
-          ? const Center(child: Text("No saved outfits yet"))
+          ? const Center(
+              child: Text("No saved outfits yet"),
+            )
           : ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: _outfits.length,
+
               itemBuilder: (context, index) {
-                final outfit = _outfits[index];
+
+                final outfitItems = _outfits[index];
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 20),
                   padding: const EdgeInsets.all(12),
+
                   decoration: BoxDecoration(
                     color: const Color(0xFFF9F9F9),
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
                         blurRadius: 20,
-                        color: Colors.black.withOpacity(0.08),
+                        color:
+                            Colors.black.withOpacity(0.08),
                         offset: const Offset(0, 10),
                       ),
                     ],
                   ),
+
                   child: Column(
                     children: [
 
-                      // Images Row
-                      Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment.spaceEvenly,
-                        children: [
-                          if (outfit['cap'] != null)
-                            _smallImage(outfit['cap']!),
+                      // ================= IMAGES =================
 
-                          if (outfit['jacket'] != null)
-                            _smallImage(outfit['jacket']!),
-                          _smallImage(outfit['shirt']!),
-                          _smallImage(outfit['pant']!),
-                          _smallImage(outfit['shoe']!),
-                        ],
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        alignment: WrapAlignment.center,
+
+                        children: outfitItems.map((item) {
+                          return _smallImage(item);
+                        }).toList(),
                       ),
 
                       const SizedBox(height: 10),
 
+                      // ================= DELETE BUTTON =================
+
                       ElevatedButton(
-                        onPressed: () => _deleteOutfit(index),
+                        onPressed: () =>
+                            _deleteOutfit(index),
+
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.red,
                           foregroundColor: Colors.white,
                         ),
+
                         child: const Text("Delete"),
                       ),
+
                     ],
                   ),
                 );
@@ -136,9 +159,13 @@ class _SavedOutfitsScreenState extends State<SavedOutfitsScreen> {
     );
   }
 
+  // ================= IMAGE =================
+
   Widget _smallImage(ClothingItem item) {
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
+
       child: Image.file(
         File(item.imagePath),
         height: 80,

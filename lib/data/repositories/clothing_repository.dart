@@ -3,6 +3,10 @@ import '../database/db_helper.dart';
 import '../models/clothing_item.dart';
 
 class ClothingRepository {
+
+  // ======================================
+  // INSERT CLOTHING ITEM
+  // ======================================
   Future<void> insertClothing(ClothingItem item) async {
     final Database db = await DBHelper.database;
 
@@ -13,31 +17,45 @@ class ClothingRepository {
     );
   }
 
+  // ======================================
+  // GET ALL CLOTHING
+  // ======================================
   Future<List<ClothingItem>> getAllClothing() async {
     final Database db = await DBHelper.database;
 
     final List<Map<String, dynamic>> maps =
         await db.query('clothing', orderBy: 'createdAt DESC');
 
-    return List.generate(maps.length, (i) {
-      return ClothingItem.fromMap(maps[i]);
-    });
+    return maps.map((map) => ClothingItem.fromMap(map)).toList();
   }
-  Future<void> deleteClothing(String id) async {
-    final db = await DBHelper.database;
-    await db.delete(
+
+  // ======================================
+  // GET CLOTHING BY CATEGORY
+  // ======================================
+  Future<List<ClothingItem>> getClothingByCategory(String categoryId) async {
+    final Database db = await DBHelper.database;
+
+    final List<Map<String, dynamic>> maps = await db.query(
       'clothing',
-      where: 'id = ?',
-      whereArgs: [id],
+      where: 'categoryId = ?',
+      whereArgs: [categoryId],
+      orderBy: 'createdAt DESC',
     );
+
+    return maps.map((map) => ClothingItem.fromMap(map)).toList();
   }
+
+  // ======================================
+  // GET CLOTHING BY ID
+  // ======================================
   Future<ClothingItem?> getClothingById(String id) async {
-    final db = await DBHelper.database;
+    final Database db = await DBHelper.database;
 
     final result = await db.query(
       'clothing',
       where: 'id = ?',
       whereArgs: [id],
+      limit: 1,
     );
 
     if (result.isNotEmpty) {
@@ -46,13 +64,18 @@ class ClothingRepository {
 
     return null;
   }
-  Future<void> deleteOutfit(String id) async {
+
+  // ======================================
+  // DELETE CLOTHING ITEM
+  // ======================================
+  Future<void> deleteClothing(String id) async {
     final db = await DBHelper.database;
 
     await db.delete(
-      'outfits',
+      'clothing',
       where: 'id = ?',
       whereArgs: [id],
     );
   }
+
 }

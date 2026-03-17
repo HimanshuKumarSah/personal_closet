@@ -1,43 +1,36 @@
 class Outfit {
   final String id;
-  final String shirtId;
-  final String pantId;
-  final String shoesId;
-  final String? jacketId;
-  final String? capId;
   final String createdAt;
 
   Outfit({
     required this.id,
-    required this.shirtId,
-    required this.pantId,
-    required this.shoesId,
-    this.jacketId,
-    this.capId,
     required this.createdAt,
   });
 
+  // Convert Outfit → SQLite Map
   Map<String, dynamic> toMap() {
     return {
       'id': id,
-      'shirtId': shirtId,
-      'pantId': pantId,
-      'shoesId': shoesId,
-      'jacketId': jacketId,
-      'capId': capId,
       'createdAt': createdAt,
     };
   }
 
+  // Convert SQLite Map → Outfit
   factory Outfit.fromMap(Map<String, dynamic> map) {
     return Outfit(
       id: map['id'],
-      shirtId: map['shirtId'],
-      pantId: map['pantId'],
-      shoesId: map['shoesId'],
-      jacketId: map['jacketId'],
-      capId: map['capId'],
       createdAt: map['createdAt'],
+    );
+  }
+
+  // Optional helper for updates
+  Outfit copyWith({
+    String? id,
+    String? createdAt,
+  }) {
+    return Outfit(
+      id: id ?? this.id,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 }

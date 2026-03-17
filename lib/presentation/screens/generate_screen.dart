@@ -11,9 +11,10 @@ import 'package:share_plus/share_plus.dart';
 import '../../services/outfit_generator_service.dart';
 import '../../data/models/clothing_item.dart';
 import '../../data/models/outfit.dart';
+import '../../data/models/outfit_item.dart';
+import '../../data/models/category.dart';
 import '../../data/repositories/outfit_repository.dart';
-
-enum LayoutStyle { symmetrical, editorial }
+import '../../data/repositories/category_repository.dart';
 
 class GenerateScreen extends StatefulWidget {
   const GenerateScreen({super.key});
@@ -23,59 +24,74 @@ class GenerateScreen extends StatefulWidget {
 }
 
 class _GenerateScreenState extends State<GenerateScreen> {
-  final OutfitGeneratorService _generator =
-      OutfitGeneratorService();
+
+  final OutfitGeneratorService _generator = OutfitGeneratorService();
   final OutfitRepository _outfitRepo = OutfitRepository();
+  final CategoryRepository _categoryRepo = CategoryRepository();
   final GlobalKey _repaintKey = GlobalKey();
 
-  ClothingItem? _shirt;
-  ClothingItem? _pant;
-  ClothingItem? _shoe;
-  ClothingItem? _jacket;
-  ClothingItem? _cap;
+  List<ClothingItem> _outfitItems = [];
+  Map<String, String> _categoryMap = {};
 
-  LayoutStyle _selectedLayout = LayoutStyle.editorial;
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    final categories = await _categoryRepo.getAllCategories();
+
+    setState(() {
+      _categoryMap = {
+        for (var c in categories) c.id: c.name.toLowerCase()
+      };
+    });
+  }
 
   // ================= GENERATE =================
+
   Future<void> _generate() async {
+
     final result = await _generator.generateOutfit();
 
-    if (result == null) {
+    if (result == null || result.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-              "Add at least Shirt, Pants and Shoes"),
+          content: Text("Not enough clothing items to generate outfit"),
         ),
       );
       return;
     }
 
     setState(() {
-      _shirt = result['shirt'];
-      _pant = result['pant'];
-      _shoe = result['shoe'];
-      _jacket = result['jacket'];
-      _cap = result['cap'];
+      _outfitItems = result;
     });
   }
 
   // ================= SAVE =================
+
   Future<void> _saveOutfit() async {
-    if (_shirt == null ||
-        _pant == null ||
-        _shoe == null) return;
+
+    if (_outfitItems.isEmpty) return;
+
+    final outfitId = const Uuid().v4();
 
     final outfit = Outfit(
-      id: const Uuid().v4(),
-      shirtId: _shirt!.id,
-      pantId: _pant!.id,
-      shoesId: _shoe!.id,
-      jacketId: _jacket?.id,
-      capId: _cap?.id,
+      id: outfitId,
       createdAt: DateTime.now().toIso8601String(),
     );
 
-    await _outfitRepo.insertOutfit(outfit);
+    final outfitItems = _outfitItems.map((item) {
+      return OutfitItem(
+        id: const Uuid().v4(),
+        outfitId: outfitId,
+        clothingId: item.id,
+        categoryId: item.categoryId,
+      );
+    }).toList();
+
+    await _outfitRepo.insertOutfit(outfit, outfitItems);
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Outfit Saved")),
@@ -83,23 +99,21 @@ class _GenerateScreenState extends State<GenerateScreen> {
   }
 
   // ================= SHARE =================
+
   Future<void> _shareOutfitImage() async {
+
     final boundary =
         _repaintKey.currentContext!.findRenderObject()
             as RenderRepaintBoundary;
 
-    final image =
-        await boundary.toImage(pixelRatio: 3);
+    final image = await boundary.toImage(pixelRatio: 3);
 
     final byteData =
-        await image.toByteData(
-            format: ui.ImageByteFormat.png);
+        await image.toByteData(format: ui.ImageByteFormat.png);
 
-    final pngBytes =
-        byteData!.buffer.asUint8List();
+    final pngBytes = byteData!.buffer.asUint8List();
 
-    final directory =
-        await getApplicationDocumentsDirectory();
+    final directory = await getApplicationDocumentsDirectory();
 
     final filePath =
         '${directory.path}/outfit_${DateTime.now().millisecondsSinceEpoch}.png';
@@ -111,30 +125,137 @@ class _GenerateScreenState extends State<GenerateScreen> {
   }
 
   // ================= REMOVE =================
+
   void _removeItem(ClothingItem item) {
     setState(() {
-      if (_shirt?.id == item.id) _shirt = null;
-      if (_pant?.id == item.id) _pant = null;
-      if (_shoe?.id == item.id) _shoe = null;
-      if (_jacket?.id == item.id) _jacket = null;
-      if (_cap?.id == item.id) _cap = null;
+      _outfitItems.removeWhere((i) => i.id == item.id);
     });
   }
 
+  // ================= LAYOUT =================
+
+  Widget _buildOutfitLayout() {
+
+    ClothingItem? shirt;
+    ClothingItem? jacket;
+    ClothingItem? pants;
+    ClothingItem? shoes;
+    ClothingItem? cap;
+
+    for (var item in _outfitItems) {
+
+      final category =
+          _categoryMap[item.categoryId] ?? "";
+
+      if (category.contains("shirt")) {
+        shirt = item;
+      }
+      else if (category.contains("jacket") ||
+          category.contains("coat") ||
+          category.contains("overshirt")) {
+        jacket = item;
+      }
+      else if (category.contains("pant") ||
+          category.contains("trouser")) {
+        pants = item;
+      }
+      else if (category.contains("shoe")) {
+        shoes = item;
+      }
+      else if (category.contains("cap") ||
+          category.contains("hat")) {
+        cap = item;
+      }
+    }
+
+    return Container(
+      width: 320,
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+      ),
+
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+
+          if (cap != null)
+            _itemWithRemove(cap, 60),
+
+          if (shirt != null || jacket != null)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (jacket != null)
+                  _itemWithRemove(jacket, 120),
+                if (shirt != null)
+                  _itemWithRemove(shirt, 120),
+              ],
+            ),
+
+          if (pants != null)
+            _itemWithRemove(pants, 140),
+
+          if (shoes != null)
+            _itemWithRemove(shoes, 100),
+        ],
+      ),
+    );
+  }
+
+  // ================= ITEM =================
+
+  Widget _itemWithRemove(ClothingItem item, double size) {
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+      child: Stack(
+        children: [
+
+          SizedBox(
+            height: size,
+            child: Image.file(
+              File(item.imagePath),
+              fit: BoxFit.contain,
+            ),
+          ),
+
+          Positioned(
+            right: 0,
+            top: 0,
+            child: GestureDetector(
+              onTap: () => _removeItem(item),
+              child: const CircleAvatar(
+                radius: 6,
+                backgroundColor: ui.Color.fromARGB(0, 82, 82, 82),
+                child: Icon(
+                  Icons.close,
+                  size: 7,
+                  color: ui.Color.fromARGB(255, 0, 0, 0),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ================= UI =================
+
   @override
   Widget build(BuildContext context) {
-    final bool complete =
-        _shirt != null &&
-            _pant != null &&
-            _shoe != null;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text("Outfit Generator"),
         centerTitle: true,
       ),
+
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
+
         child: Column(
           children: [
 
@@ -148,32 +269,15 @@ class _GenerateScreenState extends State<GenerateScreen> {
 
             const SizedBox(height: 20),
 
-            if (_shirt != null)
-              Row(
-                mainAxisAlignment:
-                    MainAxisAlignment.center,
-                children: [
-                  _layoutButton(
-                      "Symmetrical",
-                      LayoutStyle.symmetrical),
-                  const SizedBox(width: 12),
-                  _layoutButton(
-                      "Editorial",
-                      LayoutStyle.editorial),
-                ],
-              ),
-
-            const SizedBox(height: 20),
-
-            if (_shirt != null)
+            if (_outfitItems.isNotEmpty && _categoryMap.isNotEmpty)
               RepaintBoundary(
                 key: _repaintKey,
-                child: _buildLayout(),
+                child: _buildOutfitLayout(),
               ),
 
             const SizedBox(height: 24),
 
-            if (complete) ...[
+            if (_outfitItems.isNotEmpty) ...[
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -181,7 +285,9 @@ class _GenerateScreenState extends State<GenerateScreen> {
                   child: const Text("Save Outfit"),
                 ),
               ),
+
               const SizedBox(height: 12),
+
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -189,172 +295,10 @@ class _GenerateScreenState extends State<GenerateScreen> {
                   child: const Text("Share Outfit"),
                 ),
               ),
-            ],
+            ]
           ],
         ),
       ),
-    );
-  }
-
-  // ================= LAYOUT =================
-  Widget _buildLayout() {
-    return _selectedLayout ==
-            LayoutStyle.symmetrical
-        ? _buildSymmetricalLayout()
-        : _buildEditorialLayout();
-  }
-
-  // -------- Symmetrical (simple stack)
-  Widget _buildSymmetricalLayout() {
-    return Container(
-      width:
-          MediaQuery.of(context).size.width * 0.85,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius:
-            BorderRadius.circular(20),
-      ),
-      child: Column(
-        children: [
-          if (_cap != null)
-            _collageItem(_cap!, 80),
-          if (_jacket != null)
-            _collageItem(_jacket!, 120),
-          if (_shirt != null)
-            _collageItem(_shirt!, 120),
-          if (_pant != null)
-            _collageItem(_pant!, 160),
-          if (_shoe != null)
-            _collageItem(_shoe!, 100),
-        ],
-      ),
-    );
-  }
-
-  // -------- Clean Editorial Layout
-  Widget _buildEditorialLayout() {
-    return Container(
-      width: MediaQuery.of(context).size.width * 0.9,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-
-          // ---------------- TOP ROW ----------------
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-
-              // Cap (left column)
-              if (_cap != null)
-                Expanded(
-                  flex: 1,
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Image.file(
-                      File(_cap!.imagePath),
-                      height: 80,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ),
-
-              // Shirt + Jacket (right column)
-              Expanded(
-                flex: 2,
-                child: Column(
-                  children: [
-
-                    if (_shirt != null)
-                      Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Image.file(
-                          File(_shirt!.imagePath),
-                          height: 150,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-
-                    if (_jacket != null)
-                      Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Image.file(
-                          File(_jacket!.imagePath),
-                          height: 150,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 24),
-
-          // ---------------- PANTS ----------------
-          if (_pant != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Image.file(
-                File(_pant!.imagePath),
-                height: 180,
-                fit: BoxFit.contain,
-              ),
-            ),
-
-          const SizedBox(height: 20),
-
-          // ---------------- SHOES ----------------
-          if (_shoe != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Image.file(
-                File(_shoe!.imagePath),
-                height: 110,
-                fit: BoxFit.contain,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // ================= BUTTON =================
-  Widget _layoutButton(
-      String label,
-      LayoutStyle style) {
-    final selected =
-        _selectedLayout == style;
-
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: selected
-            ? Colors.black
-            : Colors.grey[300],
-        foregroundColor: selected
-            ? Colors.white
-            : Colors.black,
-      ),
-      onPressed: () =>
-          setState(() =>
-              _selectedLayout = style),
-      child: Text(label),
-    );
-  }
-
-  // ================= ITEM =================
-  Widget _collageItem(
-      ClothingItem item, double size) {
-    return Image.file(
-      File(item.imagePath),
-      height: size,
-      fit: BoxFit.contain,
     );
   }
 }

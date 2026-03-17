@@ -2,8 +2,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
+
 import '../../data/models/clothing_item.dart';
+import '../../data/models/category.dart';
 import '../../data/repositories/clothing_repository.dart';
+import '../../data/repositories/category_repository.dart';
 import '../../services/image_storage_service.dart';
 
 class AddItemScreen extends StatefulWidget {
@@ -14,14 +17,46 @@ class AddItemScreen extends StatefulWidget {
 }
 
 class _AddItemScreenState extends State<AddItemScreen> {
+
   File? _selectedImage;
-  String _category = 'shirts';
+
   String _name = '';
   String _color = '';
 
+  String? _selectedCategoryId;
+
+  List<Category> _categories = [];
+
   final _picker = ImagePicker();
   final _repository = ClothingRepository();
+  final _categoryRepo = CategoryRepository();
   final _storageService = ImageStorageService();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  // ===============================
+  // LOAD CATEGORIES
+  // ===============================
+
+  Future<void> _loadCategories() async {
+    final categories = await _categoryRepo.getAllCategories();
+
+    setState(() {
+      _categories = categories;
+
+      if (categories.isNotEmpty) {
+        _selectedCategoryId = categories.first.id;
+      }
+    });
+  }
+
+  // ===============================
+  // PICK IMAGE
+  // ===============================
 
   Future<void> _pickImage() async {
     final picked =
@@ -34,23 +69,35 @@ class _AddItemScreenState extends State<AddItemScreen> {
     }
   }
 
+  // ===============================
+  // SAVE ITEM
+  // ===============================
+
   Future<void> _saveItem() async {
+
     if (_selectedImage == null ||
         _color.isEmpty ||
-        _name.isEmpty) {
+        _name.isEmpty ||
+        _selectedCategoryId == null) {
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please fill all fields")),
       );
       return;
     }
 
-    final savedPath =
-        await _storageService.saveImage(_selectedImage!, _category);
+    final selectedCategory = _categories
+        .firstWhere((c) => c.id == _selectedCategoryId);
+
+    final savedPath = await _storageService.saveImage(
+      _selectedImage!,
+      selectedCategory.name,
+    );
 
     final item = ClothingItem(
       id: const Uuid().v4(),
       name: _name,
-      category: _category,
+      categoryId: _selectedCategoryId!,
       color: _color,
       imagePath: savedPath,
       tags: '',
@@ -61,6 +108,10 @@ class _AddItemScreenState extends State<AddItemScreen> {
 
     Navigator.pop(context);
   }
+
+  // ===============================
+  // UI
+  // ===============================
 
   @override
   Widget build(BuildContext context) {
@@ -76,6 +127,10 @@ class _AddItemScreenState extends State<AddItemScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+
+            // ===============================
+            // IMAGE PICKER
+            // ===============================
 
             GestureDetector(
               onTap: _pickImage,
@@ -103,6 +158,10 @@ class _AddItemScreenState extends State<AddItemScreen> {
 
             const SizedBox(height: 24),
 
+            // ===============================
+            // NAME
+            // ===============================
+
             TextField(
               decoration: const InputDecoration(
                 labelText: 'Name',
@@ -115,6 +174,10 @@ class _AddItemScreenState extends State<AddItemScreen> {
 
             const SizedBox(height: 20),
 
+            // ===============================
+            // CATEGORY DROPDOWN
+            // ===============================
+
             const Text(
               "Category",
               style: TextStyle(
@@ -125,35 +188,28 @@ class _AddItemScreenState extends State<AddItemScreen> {
             const SizedBox(height: 8),
 
             DropdownButtonFormField<String>(
-              value: _category,
+              value: _selectedCategoryId,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
               ),
-              items: const [
-                DropdownMenuItem(
-                    value: 'shirts',
-                    child: Text('Shirts')),
-                DropdownMenuItem(
-                    value: 'pants',
-                    child: Text('Pants')),
-                DropdownMenuItem(
-                    value: 'shoes',
-                    child: Text('Shoes')),
-                DropdownMenuItem(
-                    value: 'jackets',
-                    child: Text('Jackets')),
-                DropdownMenuItem(
-                    value: 'caps',
-                    child: Text('Caps / Hats')),
-              ],
+              items: _categories.map((category) {
+                return DropdownMenuItem(
+                  value: category.id,
+                  child: Text(category.name),
+                );
+              }).toList(),
               onChanged: (value) {
                 setState(() {
-                  _category = value!;
+                  _selectedCategoryId = value!;
                 });
               },
             ),
 
             const SizedBox(height: 20),
+
+            // ===============================
+            // COLOR
+            // ===============================
 
             TextField(
               decoration: const InputDecoration(
@@ -166,6 +222,10 @@ class _AddItemScreenState extends State<AddItemScreen> {
             ),
 
             const SizedBox(height: 30),
+
+            // ===============================
+            // SAVE BUTTON
+            // ===============================
 
             SizedBox(
               width: double.infinity,

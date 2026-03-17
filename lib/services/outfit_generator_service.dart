@@ -1,9 +1,13 @@
 import 'dart:math';
 import '../data/models/clothing_item.dart';
+import '../data/models/category.dart';
 import '../data/repositories/clothing_repository.dart';
+import '../data/repositories/category_repository.dart';
 
 class OutfitGeneratorService {
-  final ClothingRepository _repo = ClothingRepository();
+  final ClothingRepository _clothingRepo = ClothingRepository();
+  final CategoryRepository _categoryRepo = CategoryRepository();
+
   final Random _random = Random();
 
   /// Neutral colors match almost everything
@@ -45,89 +49,88 @@ class OutfitGeneratorService {
     return false;
   }
 
-  Future<Map<String, ClothingItem?>?> generateOutfit() async {
-    final items = await _repo.getAllClothing();
+  Future<List<ClothingItem>?> generateOutfit() async {
+    final clothingItems = await _clothingRepo.getAllClothing();
+    final categories = await _categoryRepo.getAllCategories();
 
-    final shirts =
-        items.where((i) => i.category == 'shirts').toList();
-    final pants =
-        items.where((i) => i.category == 'pants').toList();
-    final shoes =
-        items.where((i) => i.category == 'shoes').toList();
-    final jackets =
-        items.where((i) => i.category == 'jackets').toList();
-    final caps =
-        items.where((i) => i.category == 'caps').toList();
+    if (clothingItems.isEmpty || categories.isEmpty) return null;
 
-    /// Must have shirt + pants + shoes
-    if (shirts.isEmpty || pants.isEmpty || shoes.isEmpty) {
-      return null;
+    /// Group clothing by categoryId
+    final Map<String, List<ClothingItem>> grouped = {};
+
+    for (var item in clothingItems) {
+      grouped.putIfAbsent(item.categoryId, () => []);
+      grouped[item.categoryId]!.add(item);
     }
 
-    /// Step 1 — Pick base shirt
-    final shirt = shirts[_random.nextInt(shirts.length)];
+    List<ClothingItem> outfit = [];
 
-    /// Step 2 — Find matching pants
-    final compatiblePants = pants
-        .where((p) =>
-            isColorCompatible(shirt.color, p.color))
+    ClothingItem? baseItem;
+
+    /// Step 1 — Handle required categories
+    final requiredCategories =
+        categories.where((c) => c.required).toList();
+
+    for (var category in requiredCategories) {
+      final items = grouped[category.id];
+
+      if (items == null || items.isEmpty) {
+        return null; // cannot generate outfit
+      }
+
+      ClothingItem selected;
+
+      if (baseItem == null) {
+        selected = items[_random.nextInt(items.length)];
+        baseItem = selected;
+      } else {
+        final compatible = items
+            .where((i) =>
+                isColorCompatible(baseItem!.color, i.color))
+            .toList();
+
+        if (compatible.isNotEmpty) {
+          selected =
+              compatible[_random.nextInt(compatible.length)];
+        } else {
+          selected = items[_random.nextInt(items.length)];
+        }
+      }
+
+      outfit.add(selected);
+    }
+
+    /// Step 2 — Optional categories
+    final optionalCategories = categories
+        .where((c) => !c.required && c.enabled)
         .toList();
 
-    final pant = compatiblePants.isNotEmpty
-        ? compatiblePants[
-            _random.nextInt(compatiblePants.length)]
-        : pants[_random.nextInt(pants.length)];
+    for (var category in optionalCategories) {
+      final items = grouped[category.id];
 
-    /// Step 3 — Prefer neutral shoes
-    final neutralShoes = shoes
-        .where((s) =>
-            neutralColors.contains(normalize(s.color)))
-        .toList();
+      if (items == null || items.isEmpty) continue;
 
-    final shoe = neutralShoes.isNotEmpty
-        ? neutralShoes[_random.nextInt(neutralShoes.length)]
-        : shoes[_random.nextInt(shoes.length)];
+      /// 50% chance to include optional category
+      if (_random.nextBool()) {
+        final compatible = items
+            .where((i) =>
+                baseItem == null ||
+                isColorCompatible(baseItem!.color, i.color))
+            .toList();
 
-    /// Step 4 — Optional jacket
-    ClothingItem? jacket;
+        ClothingItem selected;
 
-    if (jackets.isNotEmpty) {
-      final compatibleJackets = jackets
-          .where((j) =>
-              isColorCompatible(shirt.color, j.color) ||
-              isColorCompatible(pant.color, j.color))
-          .toList();
+        if (compatible.isNotEmpty) {
+          selected =
+              compatible[_random.nextInt(compatible.length)];
+        } else {
+          selected = items[_random.nextInt(items.length)];
+        }
 
-      if (compatibleJackets.isNotEmpty) {
-        jacket = compatibleJackets[
-            _random.nextInt(compatibleJackets.length)];
+        outfit.add(selected);
       }
     }
 
-    /// Step 5 — Optional cap
-    ClothingItem? cap;
-
-    if (caps.isNotEmpty) {
-      final compatibleCaps = caps
-          .where((c) =>
-              normalize(c.color) ==
-                  normalize(shoe.color) ||
-              normalize(c.color) ==
-                  normalize(shirt.color))
-          .toList();
-
-      if (compatibleCaps.isNotEmpty) {
-        cap = compatibleCaps[
-            _random.nextInt(compatibleCaps.length)];
-      }
-    }
-
-    return {
-      'shirt': shirt,
-      'pant': pant,
-      'shoe': shoe,
-      'jacket': jacket,
-      'cap': cap,
-    };
+    return outfit;
   }
 }

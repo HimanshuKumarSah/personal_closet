@@ -2,7 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../data/models/clothing_item.dart';
+import '../../data/models/category.dart';
 import '../../data/repositories/clothing_repository.dart';
+import '../../data/repositories/category_repository.dart';
 import 'image_viewer_screen.dart';
 
 class ClosetScreen extends StatefulWidget {
@@ -13,47 +15,72 @@ class ClosetScreen extends StatefulWidget {
 }
 
 class _ClosetScreenState extends State<ClosetScreen> {
-  final ClothingRepository _repository = ClothingRepository();
+
+  final ClothingRepository _clothingRepo = ClothingRepository();
+  final CategoryRepository _categoryRepo = CategoryRepository();
 
   List<ClothingItem> _items = [];
+  List<Category> _categories = [];
+
   String _selectedCategory = "all";
 
   @override
   void initState() {
     super.initState();
-    _loadItems();
+    _loadData();
   }
 
-  Future<void> _loadItems() async {
-    final items = await _repository.getAllClothing();
+  // ===============================
+  // LOAD DATA
+  // ===============================
+
+  Future<void> _loadData() async {
+
+    final items = await _clothingRepo.getAllClothing();
+    final categories = await _categoryRepo.getAllCategories();
 
     setState(() {
       _items = items;
+      _categories = categories;
     });
   }
 
+  // ===============================
+  // DELETE ITEM
+  // ===============================
+
   Future<void> _deleteItem(String id) async {
-    await _repository.deleteClothing(id);
-    _loadItems();
+    await _clothingRepo.deleteClothing(id);
+    _loadData();
   }
 
+  // ===============================
+  // FILTERED ITEMS
+  // ===============================
+
   List<ClothingItem> get filteredItems {
+
     if (_selectedCategory == "all") {
       return _items;
     }
 
     return _items
-        .where((item) => item.category == _selectedCategory)
+        .where((item) => item.categoryId == _selectedCategory)
         .toList();
   }
 
-  Widget _categoryButton(String label, String category) {
-    final selected = _selectedCategory == category;
+  // ===============================
+  // CATEGORY BUTTON
+  // ===============================
+
+  Widget _categoryButton(String label, String categoryId) {
+
+    final selected = _selectedCategory == categoryId;
 
     return GestureDetector(
       onTap: () {
         setState(() {
-          _selectedCategory = category;
+          _selectedCategory = categoryId;
         });
       },
       child: Container(
@@ -76,8 +103,28 @@ class _ClosetScreenState extends State<ClosetScreen> {
     );
   }
 
+  // ===============================
+  // GET CATEGORY NAME
+  // ===============================
+
+  String getCategoryName(String categoryId) {
+
+    final category = _categories
+        .where((c) => c.id == categoryId)
+        .toList();
+
+    if (category.isEmpty) return "Unknown";
+
+    return category.first.name;
+  }
+
+  // ===============================
+  // UI
+  // ===============================
+
   @override
   Widget build(BuildContext context) {
+
     return Scaffold(
       backgroundColor: const Color(0xFFF3F3F3),
 
@@ -89,24 +136,34 @@ class _ClosetScreenState extends State<ClosetScreen> {
       body: Column(
         children: [
 
-          /// Category Filter
+          // ===============================
+          // CATEGORY FILTER
+          // ===============================
+
           SizedBox(
             height: 60,
             child: ListView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.all(12),
               children: [
+
                 _categoryButton("All", "all"),
-                _categoryButton("Shirts", "shirts"),
-                _categoryButton("Pants", "pants"),
-                _categoryButton("Shoes", "shoes"),
-                _categoryButton("Jackets", "jackets"),
-                _categoryButton("Caps", "caps"),
+
+                ..._categories.map((category) {
+                  return _categoryButton(
+                    category.name,
+                    category.id,
+                  );
+                }).toList(),
+
               ],
             ),
           ),
 
-          /// Closet Grid
+          // ===============================
+          // CLOSET GRID
+          // ===============================
+
           Expanded(
             child: filteredItems.isEmpty
                 ? const Center(
@@ -126,7 +183,11 @@ class _ClosetScreenState extends State<ClosetScreen> {
                       childAspectRatio: 0.75,
                     ),
                     itemBuilder: (context, index) {
+
                       final item = filteredItems[index];
+
+                      final categoryName =
+                          getCategoryName(item.categoryId);
 
                       return Container(
                         decoration: BoxDecoration(
@@ -143,7 +204,10 @@ class _ClosetScreenState extends State<ClosetScreen> {
                         child: Column(
                           children: [
 
-                            /// Image
+                            // ===============================
+                            // IMAGE
+                            // ===============================
+
                             Expanded(
                               child: GestureDetector(
                                 onTap: () {
@@ -172,13 +236,17 @@ class _ClosetScreenState extends State<ClosetScreen> {
                               ),
                             ),
 
-                            /// Clothing Info
+                            // ===============================
+                            // INFO
+                            // ===============================
+
                             Padding(
                               padding:
                                   const EdgeInsets.symmetric(
                                       horizontal: 8, vertical: 6),
                               child: Column(
                                 children: [
+
                                   Text(
                                     item.name,
                                     style: const TextStyle(
@@ -190,24 +258,31 @@ class _ClosetScreenState extends State<ClosetScreen> {
                                   const SizedBox(height: 2),
 
                                   Text(
-                                    "${item.category} • ${item.color}",
+                                    "$categoryName • ${item.color}",
                                     style: const TextStyle(
                                       fontSize: 12,
                                       color: Colors.grey,
                                     ),
                                   ),
+
                                 ],
                               ),
                             ),
 
-                            /// Delete Button
+                            // ===============================
+                            // DELETE BUTTON
+                            // ===============================
+
                             IconButton(
-                              icon: const Icon(Icons.delete,
-                                  color: Colors.red),
+                              icon: const Icon(
+                                Icons.delete,
+                                color: Colors.red,
+                              ),
                               onPressed: () {
                                 _deleteItem(item.id);
                               },
                             ),
+
                           ],
                         ),
                       );
